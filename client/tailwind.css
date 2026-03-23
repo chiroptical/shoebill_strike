@@ -1,0 +1,325 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom base styles for dark mode */
+@layer base {
+  body {
+    @apply bg-gray-900 text-gray-100 min-h-screen;
+  }
+}
+
+/* Reusable button components */
+@layer components {
+  .btn {
+    @apply w-full py-3 px-4 rounded-lg font-semibold transition-colors lg:py-4 lg:px-5 lg:text-lg;
+  }
+
+  .btn-primary {
+    @apply btn bg-[#687487] hover:bg-[#7a8799] text-white;
+  }
+
+  .btn-ready {
+    @apply btn bg-[#876884] hover:bg-[#997a96] text-white;
+  }
+
+  .btn-secondary {
+    @apply btn bg-gray-700 hover:bg-gray-600 text-gray-100;
+  }
+
+  .btn-disabled {
+    @apply btn bg-gray-600 text-gray-400 cursor-not-allowed;
+  }
+
+  .btn-approve {
+    @apply btn bg-[#68876B] hover:bg-[#7a997d] text-white;
+  }
+
+  .btn-reject {
+    @apply btn bg-red-600 hover:bg-red-500 text-white;
+  }
+
+  .btn-strike {
+    @apply btn bg-[#877B68] hover:bg-[#998d7a] text-white;
+  }
+
+  .btn-abandon {
+    @apply btn bg-red-600 hover:bg-red-500 text-white;
+  }
+
+  .btn-small {
+    @apply py-2 px-3 text-sm rounded-md font-medium transition-colors;
+  }
+
+  .btn-copy {
+    @apply btn-small bg-gray-700 hover:bg-gray-600 text-gray-300;
+  }
+
+  .input {
+    @apply w-full p-3 rounded-lg bg-gray-700 border border-gray-600 text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#858D9A] focus:border-transparent;
+  }
+
+  .card {
+    @apply bg-gray-800 rounded-lg p-6 shadow-lg w-full max-w-md md:max-w-3xl lg:max-w-5xl;
+  }
+
+  /* Responsive game container - used for game screens */
+  .game-container {
+    @apply w-full max-w-md md:max-w-3xl lg:max-w-5xl;
+  }
+
+  /* Two-column layout for md+ screens */
+  .responsive-two-col {
+    @apply flex flex-col md:flex-row md:gap-6;
+  }
+
+  /* Three-column layout for lg+ screens */
+  .responsive-three-col {
+    @apply flex flex-col lg:flex-row lg:gap-4;
+  }
+
+  /* Main content column - takes up most space */
+  .col-main {
+    @apply w-full md:flex-1;
+  }
+
+  /* Side column - fixed width on larger screens */
+  .col-side {
+    @apply w-full md:w-72 lg:w-64;
+  }
+
+  /* Players sidebar - for lg+ layout */
+  .col-players {
+    @apply w-full lg:w-56;
+  }
+
+  /* Game log sidebar - for lg+ layout */
+  .col-log {
+    @apply w-full lg:w-64;
+  }
+
+  .error-message {
+    @apply text-red-400 text-sm mt-2 text-center;
+  }
+
+  /* Game screen wrapper - leave room for fixed log at bottom on mobile */
+  .game-screen-wrapper {
+    @apply pb-[20vh] lg:pb-0;
+  }
+
+  /* Game log - mobile-first responsive positioning
+     Mobile: fixed overlay at viewport bottom
+     Desktop (lg+): absolute sidebar next to main content */
+  .game-log {
+    /* === BASE/MOBILE STYLES === */
+    @apply bg-gray-800 border border-gray-700 rounded-t-lg p-2 overflow-y-auto;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    margin-left: auto;
+    margin-right: auto;
+    width: calc(100% - 1rem);
+    max-width: 28rem;
+    height: 20vh;
+  }
+
+  /* === DESKTOP ENHANCEMENTS (lg+) === */
+  @media (min-width: 1024px) {
+    .game-log {
+      /* Switch from fixed to absolute positioning */
+      position: absolute;
+      /* Position to the right of the relative container */
+      left: 100%;
+      right: auto;
+      top: 0;
+      bottom: 0;
+      /* Sidebar spacing and sizing */
+      margin-left: 1.5rem;
+      margin-right: 0;
+      width: 18rem;
+      max-width: none;
+      height: auto;
+      /* Desktop styling */
+      @apply rounded-lg p-3;
+    }
+  }
+
+  .game-log h3 {
+    @apply text-sm font-semibold text-gray-400 mb-2;
+  }
+
+  .game-log-list {
+    @apply space-y-1 text-sm list-none m-0 p-0;
+  }
+
+  .game-log-entry {
+    @apply flex gap-2;
+  }
+
+  .game-log-entry .timestamp {
+    @apply text-gray-500 font-mono text-xs whitespace-nowrap;
+  }
+
+  .game-log-entry .event {
+    @apply text-gray-300;
+  }
+
+  /* Responsive hand grid - more columns on larger screens */
+  .hand-grid {
+    @apply grid grid-cols-4 md:grid-cols-6 lg:grid-cols-5 gap-2 lg:gap-3 content-start overflow-hidden;
+  }
+
+  /* Responsive other players grid */
+  .other-players-grid {
+    @apply grid grid-cols-3 gap-2;
+  }
+
+  /* Reward guide toggle button - centered at top of screen, flush with top */
+  .reward-guide-toggle {
+    position: fixed;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 40;
+    @apply bg-gray-800 border-x border-b border-gray-700 rounded-b px-2 py-0.5;
+    @apply text-gray-500 hover:text-gray-300 transition-colors text-xs;
+  }
+
+  /* Reward guide panel - drops down from top center on mobile */
+  .reward-guide {
+    position: fixed;
+    top: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 50;
+    @apply bg-gray-800 border border-gray-700 rounded-lg p-3;
+    @apply shadow-lg;
+    width: 11rem;
+  }
+
+  /* Desktop: absolute sidebar mirroring game-log (on the LEFT) */
+  @media (min-width: 1024px) {
+    .reward-guide-toggle {
+      display: none;
+    }
+
+    .reward-guide {
+      position: absolute;
+      right: 100%;
+      left: auto;
+      top: 0;
+      bottom: 0;
+      transform: none;
+      margin-right: 1.5rem;
+      width: 9rem;
+      height: auto;
+      @apply rounded-lg;
+    }
+  }
+
+  .reward-guide h3 {
+    @apply text-sm font-semibold text-gray-400 mb-2;
+  }
+
+  .reward-guide-list {
+    @apply space-y-1 text-sm list-none m-0 p-0;
+  }
+
+  .reward-guide-item {
+    @apply text-gray-300;
+  }
+}
+
+/* Custom animation utilities */
+@layer utilities {
+  /* Countdown pulse */
+  @keyframes countdown-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.1); opacity: 0.8; }
+  }
+
+  .animate-countdown {
+    animation: countdown-pulse 1s ease-in-out infinite;
+  }
+
+  /* Breathing animation for transition into Active Play
+     Emulates the game's ritual of players breathing together before starting.
+     One complete breath cycle (in + out) over 3 seconds to match the countdown. */
+  @keyframes breathe {
+    0% {
+      transform: scale(1);
+      opacity: 0.7;
+    }
+    50% {
+      transform: scale(1.08);
+      opacity: 1;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 0.7;
+    }
+  }
+
+  .animate-breathe {
+    animation: breathe 3s ease-in-out infinite;
+  }
+
+  /* Alternative: One breath per second (3 breaths during countdown) */
+  .animate-breathe-fast {
+    animation: breathe 1s ease-in-out infinite;
+  }
+
+  /* Urgent glow for vote timer - pulses red glow without movement */
+  @keyframes urgent-glow {
+    0%, 100% { text-shadow: 0 0 0 transparent; }
+    50% { text-shadow: 0 0 12px rgb(248 113 113 / 0.6); }
+  }
+
+  .animate-urgent {
+    animation: urgent-glow 0.5s ease-in-out infinite;
+  }
+
+  /* Toast notification - slides up with bounce and glow */
+  @keyframes toast-in {
+    0% {
+      opacity: 0;
+      transform: translate(-50%, 2rem) scale(0.8);
+    }
+    50% {
+      opacity: 1;
+      transform: translate(-50%, -0.5rem) scale(1.02);
+    }
+    70% {
+      transform: translate(-50%, 0.1rem) scale(0.99);
+    }
+    100% {
+      opacity: 1;
+      transform: translate(-50%, 0) scale(1);
+    }
+  }
+
+  @keyframes toast-out {
+    0% {
+      opacity: 1;
+      transform: translate(-50%, 0) scale(1);
+    }
+    30% {
+      transform: translate(-50%, -0.3rem) scale(1.02);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(-50%, 2rem) scale(0.8);
+    }
+  }
+
+  .animate-toast-in {
+    animation: toast-in 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    box-shadow: 0 0 20px rgba(104, 116, 135, 0.4);
+  }
+
+  .animate-toast-out {
+    animation: toast-out 0.4s cubic-bezier(0.6, -0.28, 0.735, 0.045) forwards;
+    box-shadow: 0 0 20px rgba(104, 116, 135, 0.4);
+  }
+}

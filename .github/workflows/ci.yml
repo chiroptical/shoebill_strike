@@ -1,0 +1,61 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+env:
+  OTP_VERSION: "28"
+  GLEAM_VERSION: "1.14.0"
+  REBAR3_VERSION: "3"
+
+jobs:
+  test-shared:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          gleam-version: ${{ env.GLEAM_VERSION }}
+          rebar3-version: ${{ env.REBAR3_VERSION }}
+      - run: gleam deps download
+        working-directory: shared
+      - run: gleam test
+        working-directory: shared
+      - run: gleam format --check src test
+        working-directory: shared
+
+  test-client:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          gleam-version: ${{ env.GLEAM_VERSION }}
+          rebar3-version: ${{ env.REBAR3_VERSION }}
+      - run: gleam deps download
+        working-directory: client
+      - run: gleam test
+        working-directory: client
+      - run: gleam format --check src test
+        working-directory: client
+
+  test-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          gleam-version: ${{ env.GLEAM_VERSION }}
+          rebar3-version: ${{ env.REBAR3_VERSION }}
+      - run: gleam deps download
+        working-directory: server
+      - run: gleam test
+        working-directory: server
+      - run: gleam format --check src test
+        working-directory: server
