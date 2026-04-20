@@ -2,6 +2,19 @@
 
 A cooperative card game of patience and timing, built with Gleam.
 
+All game icons came from https://game-icons.net/
+
+This was an experiment for me. My work is encouraging more LLM usage and here is
+my practice. I built this using Claude Opus 4.5, the context was mostly managed
+and iterated on, pretty diligently, at the beginning. Towards the end I started
+to get more lazy and I should probably go through my context more carefully
+again.
+
+There is nothing interesting architecturally here. We use a single game
+actor which is keyed on a generated code for a lobby. The game is deployed at
+https://shoebill.app and can't scale horizontally. I'd need a mechanism to pin
+users to instances based on their game code.
+
 ## Local Development
 
 ### Docker
@@ -49,7 +62,7 @@ Mock routes render UI with static state from URL parameters:
 - `/mock/abandon?votes=1&pending=1&seconds=8` - Abandon vote
 - `/mock/end?outcome=win&rounds=8` - End game screen
 
-## Testing
+## Test
 
 ```sh
 make build
