@@ -1,12 +1,14 @@
-# Task 1: Latency Compensation Implementation Plan
+# Task 1b: Latency Compensation
 
 ## Overview
 
-Implement ping/pong latency measurement and latency-compensated mistake resolution to handle simultaneous card plays fairly across different network conditions.
+Build on [mistake-audit-resolution.md](mistake-audit-resolution.md) by adding ping/pong latency measurement and latency-adjusted timestamp resolution. This allows fair resolution of near-simultaneous card plays across different network conditions.
+
+**Prerequisites:** Task 1a (Mistake Audit Resolution) must be complete.
 
 ---
 
-## Subtasks (11 steps)
+## Subtasks (7 steps)
 
 ### Step 1: Add Protocol Types for Ping/Pong [S]
 **Files:**
@@ -93,92 +95,25 @@ pub fn calculate_latency(key: BitArray, token: String) -> Result(Float, Nil) {
 
 ---
 
-### Step 7: Add MistakeResolutionState Type [S]
+### Step 7: Update Resolution with Latency Adjustment [M]
 **Files:**
-- `server/src/game_server/state.gleam`:
-  ```gleam
-  pub type BufferedCard {
-    BufferedCard(user_id: String, card: Int, server_receive_time: Int)
-  }
+- `server/src/game_server/mistake_resolution.gleam`:
+  - Update `buffer_window_ms` to be dynamic:
+    ```gleam
+    pub fn get_buffer_window_ms(state: ServerState, game_code: String) -> Int
+    // Returns min(max(latencies) / 2, 250), default 250 if no data
+    ```
+  - Add latency-adjusted sorting:
+    ```gleam
+    fn adjust_timestamp(server_time: Int, latency_ms: Float) -> Float
+    // effective_time = server_time - min(latency / 2, 250)
 
-  pub type MistakeResolutionState {
-    MistakeResolutionState(
-      game_code: String,
-      trigger_card: Int,
-      trigger_user_id: String,
-      trigger_time: Int,
-      buffered_cards: Dict(String, BufferedCard),
-    )
-  }
-  ```
-- Add `MistakeResolutionMsg(game_code: String)` to ServerMsg
-- Add `mistake_resolutions: Dict(String, MistakeResolutionState)` to ServerState
-
-**Note:** No `arrival_order` field needed - use `server_receive_time` as FIFO tiebreaker when adjusted timestamps are equal.
-
-**Verify:** Types compile
-
----
-
-### Step 8: Calculate Buffer Window Duration [S]
-**Files:**
-- `server/src/game_server/latency.gleam`:
-  ```gleam
-  pub fn get_buffer_window_ms(state: ServerState, game_code: String) -> Int
-  // Returns min(max(latencies) / 2, 250), default 250 if no data
-  ```
-
-**Verify:** Unit tests:
-- Empty latencies -> 250ms (default)
-- All 50ms -> 25ms
-- One 1000ms, others 50ms -> 250ms (capped)
-- All 400ms -> 200ms
-
----
-
-### Step 9: Modify PlayCard to Detect and Buffer [L]
-**Files:**
-- `shared/src/game.gleam` - Add `check_potential_mistake(game, user_id) -> Option(List(String))`
-- `server/src/game_server/handlers/game_play.gleam`:
-  - Check for potential mistake before applying
-  - If potential mistake + no active resolution: create MistakeResolutionState, schedule timer
-  - If active resolution: add to buffered_cards (ignore duplicates via Dict keying)
-
-**Cards arriving after buffer expires:**
-- If no mistake detected and game stays in ActivePlay: process normally (could trigger new resolution)
-- If mistake detected and game transitions to Pause: reject the card (per architecture: "PlayCard during Pause phase -> rejected")
-
-**Verify:** Normal play works. Potential mistakes enter buffering.
-
----
-
-### Step 10: Implement Latency-Adjusted Resolution [L]
-**Files:**
-- NEW: `server/src/game_server/handlers/mistake_resolution.gleam`:
-  ```gleam
-  pub fn resolve_mistake(state: ServerState, game_code: String) -> ServerState
-
-  fn adjust_timestamp(server_time: Int, latency_ms: Float) -> Float
-  // effective_time = server_time - min(latency / 2, 250)
-
-  fn sort_by_adjusted_time(cards: List(BufferedCard), latencies: Dict) -> List(BufferedCard)
-  // Sort by adjusted time, use server_receive_time as FIFO tiebreaker for equal adjusted times
-
-  fn is_valid_ascending(cards: List(Int), pile_top: Int) -> Bool
-  ```
-- `server/src/game_server/handlers/ticks.gleam` - Add handler for `MistakeResolutionMsg`
+    fn sort_by_adjusted_time(cards: List(BufferedCard), latencies: Dict(String, Float)) -> List(BufferedCard)
+    // Sort by adjusted time, use server_receive_time as FIFO tiebreaker for equal adjusted times
+    ```
+  - Update `resolve_mistake` to use latency-adjusted sorting
 
 **Verify:** Unit tests with edge cases (see below)
-
----
-
-### Step 11: Block Votes During Resolution [S]
-**Files:**
-- `server/src/game_server/handlers/vote_initiation.gleam`:
-  - In `handle_initiate_strike_vote`: check if resolution active, ignore if so
-  - Same for `handle_initiate_abandon_vote`
-
-**Verify:** Cannot initiate vote while resolution active
 
 ---
 
@@ -280,68 +215,6 @@ Result: NOT ascending (80 > 30) -> MISTAKE
   Player C's card (50) still in hand for next round.
 ```
 
-### Example 5: Remaining Lower Cards After Valid Buffer
-```
-Pile top: 25
-Latencies: Alice=50ms, Bob=50ms, Carol=50ms
-Buffer window: min(50/2, 250) = 25ms
-
-Server receives:
-  t=0ms:  Alice plays 30 (latency: 50ms)  <- triggers buffer
-  t=20ms: Bob plays 35 (latency: 50ms)    <- within buffer
-
-Carol still has card 28 in hand (didn't play).
-
-Adjusted times:
-  Alice: 0 - 25 = -25ms
-  Bob: 20 - 25 = -5ms
-
-Sorted: [Alice 30, Bob 35]
-Card order: [30, 35]
-Ascending check: VALID (30 < 35)
-
-BUT: After applying cards, pile top = 35
-Carol has 28 < 30 (Alice's card that was just played)
-
-Result: MISTAKE - Carol should have played 28 before Alice played 30
-  Carol's 28 is discarded. Life lost. Pause phase.
-```
-
-### Example 6: Duplicate Protection
-```
-Server receives:
-  t=0ms:   Alice plays 40 (triggers buffer)
-  t=20ms:  Alice plays 40 again (WebSocket retry/duplicate)
-  t=50ms:  Bob plays 38
-
-Buffer uses Dict keyed by user_id:
-  After t=0ms:  {Alice: BufferedCard("alice", 40, 0)}
-  After t=20ms: {Alice: BufferedCard("alice", 40, 0)}  <- duplicate ignored!
-  After t=50ms: {Alice: ..., Bob: BufferedCard("bob", 38, 50)}
-
-Resolution proceeds with exactly 2 cards: Alice's 40 and Bob's 38.
-```
-
-### Example 7: Card Arrives After Buffer Expires
-```
-Latencies: Alice=50ms, Bob=300ms
-Buffer window: min(300/2, 250) = 150ms
-
-Server receives:
-  t=0ms:   Alice plays 45 (latency: 50ms)  <- triggers buffer
-  t=200ms: Bob plays 42 (latency: 300ms)   <- arrives AFTER 150ms buffer!
-
-At t=150ms, buffer expires with only Alice's card.
-Resolution: Just [Alice 45]. No other cards to check order against.
-Alice's 45 is applied to pile.
-
-Then at t=200ms, Bob's PlayCard arrives.
-Server sees Bob has 42 < pile top (now 45).
-This triggers a NEW potential mistake check.
-
-Result: Bob's card triggers new resolution.
-```
-
 ---
 
 ## Key Files Summary
@@ -352,16 +225,11 @@ Result: Bob's card triggers new resolution.
 | `shared/src/protocol/decoders.gleam` | Decode pong_server |
 | `shared/src/protocol/encoders.gleam` | Encode PingClient |
 | `server/src/server.gleam` | Handle pong_server WebSocket message |
-| `server/src/game_server/state.gleam` | Add latencies, ping_key, MistakeResolutionState |
+| `server/src/game_server/state.gleam` | Add player_latencies, ping_key |
 | `server/src/game_server/actor.gleam` | Handle PongServer, init latencies and key |
-| `server/src/game_server/latency.gleam` | NEW: token creation, latency calc, buffer window |
+| `server/src/game_server/latency.gleam` | NEW: token creation, latency calc |
 | `server/src/game_server/countdown.gleam` | Send pings before countdown |
-| `server/src/game_server/handlers/game_play.gleam` | Buffer potential mistakes |
-| `server/src/game_server/handlers/mistake_resolution.gleam` | NEW: latency-adjusted resolution |
-| `server/src/game_server/handlers/ticks.gleam` | Handle MistakeResolutionMsg |
-| `server/src/game_server/handlers/vote_initiation.gleam` | Block votes during resolution |
-| `client/src/client.ffi.mjs` | Parse ping_client |
-| `client/src/client/server_messages.gleam` | Echo PongServer |
+| `server/src/game_server/mistake_resolution.gleam` | Dynamic buffer window, latency-adjusted sorting |
 
 ---
 
@@ -371,6 +239,7 @@ Result: Bob's card triggers new resolution.
 2. **Integration test:** Create game, ready up, observe PingClient/PongServer exchange
 3. **Manual test:** Two browser tabs, simulate simultaneous plays, verify latency compensation works
 4. **Edge case test:** High latency player (throttle network in DevTools)
+5. **Compare with Task 1a:** Run same scenarios with and without latency adjustment to verify improvement
 
 ---
 
@@ -388,9 +257,5 @@ Use most recent latency value rather than running average:
 ### FIFO Tiebreaker
 When adjusted timestamps are equal, use `server_receive_time` directly as tiebreaker. No separate `arrival_order` counter needed.
 
-### Cards After Buffer
-- During ActivePlay: process normally, may trigger new resolution
-- During Pause: reject (per existing architecture)
-
 ### UI Display
-Don't display latency in the UI - adds technical clutter without gameplay benefit. Use debug logging if needed for testing.
+Don't display latency values in the UI - adds technical clutter without gameplay benefit. The audit info from Task 1a (time deltas) remains useful for debugging.

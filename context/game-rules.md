@@ -323,63 +323,15 @@ The game maintains a timestamped log of events for player reference. The log is 
 
 ## Remaining Tasks
 
-**Task 1 [L]: Latency Compensation**
-See [context/latency-introduction.md](latency-introduction.md) for detailed implementation plan.
+Tasks are ordered by importance. HIGH PRIORITY tasks are critical for gameplay or architecture.
 
-**Task 2 [S] (HIGH PRIORITY): Display Game Log on Defeat Screen**
-- Game log should be visible on EndGame screen when outcome is Loss
-- Helps players review what went wrong in the final moments
-- Follow existing EndGame layout pattern (two-column on md+, includes log)
+### HIGH PRIORITY
 
-**Task 3 [S] (HIGH PRIORITY): Investigate Auto-Play UX After Pause**
-- **Observed:** After mistake, Pause phase with one player having one card. Players ready up, transition directly to Dealing (new round) with no visible auto-play feedback.
-- **Expected behavior (per rules):** Auto-play should apply the single player's cards, complete the round, then transition to Dealing. This IS happening server-side.
-- **Investigate:**
-  1. Verify auto-played cards ARE logged (game log shows "X automatically played Y")
-  2. Check if game log is visible during this transition (Pause → Dealing)
-  3. Consider adding toast/animation feedback for auto-play so players understand what happened
-  4. Verify the pile reflects the auto-played card before transition
-- **Root cause hypothesis:** Auto-play works correctly but UX is confusing - no visual feedback, transition too fast, or game log not visible during Pause phase exit.
-- **Code paths:** `game_play.gleam:61` (`AutoPlayThenDeal`), `perform_auto_play()`, `game_log.gleam:158` (log formatting)
+**Task 1 [M] (HIGH PRIORITY): Mistake Audit Resolution**
+See [mistake-audit-resolution.md](mistake-audit-resolution.md) for detailed implementation plan.
+Implements buffering window for near-simultaneous card plays with FIFO resolution. Captures time deltas between card arrivals for audit/display purposes.
 
-**Task 4 [S]: Eliminate GameLogEvent Server Message**
-- `GameLogEvent` is redundant: every action that logs an event also broadcasts `GameStateUpdate` with full `game_log`
-- Client already uses `game_log` from `GameStateUpdate` (replaces whole game state)
-- Remove `GameLogEvent` broadcasts from server (`log_event` function and disconnect/reconnect handlers)
-- Remove `GameLogEvent` handling from client
-- Add timestamp to `PlayerDisconnected`/`PlayerReconnected` messages (these don't trigger `GameStateUpdate`)
-- Server still maintains `game_log` on `Game` type for reconnection state
-- Simplifies protocol and reduces network traffic
-
-**Task 5 [S]: Spacebar to Play Card**
-- Add keyboard shortcut: spacebar triggers "Play" button in ActivePlay phase
-- Only active when Play button is visible and enabled
-- Consider focus management (don't trigger if typing in input)
-
-**Task 6 [M]: Server State Cleanup on Full Disconnect**
-- Currently unclear what happens when all players disconnect
-- Implement: start 5-minute timer when last player disconnects
-- If any player reconnects before timer expires, cancel cleanup
-- If timer expires, purge game/lobby state from server
-- Prevents orphaned games from accumulating in memory
-
-**Task 7 [L]: Data Structure Refactoring**
-See `context/data-structures-refactor.md` for detailed implementation plan.
-
-- **7a [S]: PlayedPile opaque type** - Replace `played_cards: List(Card)` with `played_pile: PlayedPile` opaque type that encapsulates card history and cached top card. Includes unit tests. Provides O(1) top card access.
-- **7b [M]: Players List to Dict** - Change `Lobby.players: List(Player)` and `Game.players: List(GamePlayer)` to `Dict(String, Player/GamePlayer)` keyed by user_id. Cleaner lookups via `dict.get` instead of `list.find`. Wire format unchanged (JSON arrays).
-- **7c [S]: VoteState.pending List to Set** - Change `VoteState.pending: List(String)` to `Set(String)` for O(1) membership checks and clearer semantics.
-
-**Task 8 [L]: Type-Safe UserId with youid**
-- Add `youid` dependency to shared/server/client
-- Replace `user_id: String` with `user_id: Uuid` from `youid/uuid`
-- Update `Player`, `GamePlayer`, `Game` (host_user_id), `Model` types
-- Update JSON encoding/decoding (UUID ↔ String conversion at protocol boundary)
-- Update Dict keys where user_id is used (connections, player_latencies, votes, etc.)
-- Update localStorage read/write in client.ffi.mjs
-- Benefits: compile-time safety, can't mix up user_id with nickname/game_code
-
-**Task 9 [XL]: Per-Game Actor Architecture**
+**Task 2 [XL] (HIGH PRIORITY): Per-Game Actor Architecture**
 Refactor from single central actor to per-game actors using named processes.
 
 **Motivation:**
@@ -409,7 +361,7 @@ Connection Process (per WebSocket)
 - Game actors register themselves as named processes on startup
 - Supervisor handles crashes/restarts; named process lookup handles routing
 
-**9a [M]: Game Actor Module**
+**2a [M]: Game Actor Module**
 - Use `gleam/otp/factory_supervisor` to manage game actor children dynamically
 - Factory supervisor spawns game actors on demand, supervises them, handles restarts
 - Create `server/src/game_actor.gleam` with new actor type
@@ -428,7 +380,7 @@ Connection Process (per WebSocket)
 - Implement `start(code) -> Subject(GameActorMsg)` that registers as `"game_" <> code`
 - Port existing handlers to operate on `GameActorState` (no Dict lookups)
 
-**9b [M]: Connection Process State**
+**2b [M]: Connection Process State**
 - Modify `server.gleam` WebSocket handler to maintain connection state:
   - `subject: Subject(ServerMessage)` (to send to client)
   - `user_id: Option(String)`
@@ -439,7 +391,7 @@ Connection Process (per WebSocket)
 - On other messages: forward to cached `game_subject`
 - On WebSocket close: send `PlayerDisconnected` to game actor
 
-**9c [S]: Reconnection Handling**
+**2c [S]: Reconnection Handling**
 - Client sends `JoinGame(code, user_id, nickname)` on reconnect (has both in localStorage)
 - Connection process looks up `process.named("game_" <> code)`
 - Game actor receives `PlayerJoined`, detects existing `user_id` → reconnection
@@ -447,13 +399,14 @@ Connection Process (per WebSocket)
 - Game actor sends current state (game, vote status, countdown) to reconnected player
 - No separate "reconnect" message needed
 
-**9d [S]: Disconnect Cleanup**
+**2d [M]: Disconnect Cleanup & Server State Cleanup**
 - Connection process sends `PlayerDisconnected(user_id)` on WebSocket close
 - Game actor marks player disconnected, starts cleanup timer if last player
 - If all players disconnect: 5-minute timer, then actor terminates and unregisters
 - If player reconnects: cancel cleanup timer
+- Prevents orphaned games from accumulating in memory
 
-**9e [M]: Remove Central Actor**
+**2e [M]: Remove Central Actor**
 - Delete `server/src/game_server/` directory (or repurpose minimally)
 - Remove `game_server` actor startup from `server.gleam`
 - All game state now lives in per-game actors
@@ -474,3 +427,75 @@ Connection Process (per WebSocket)
 - Integration test: create game, join, play cards, disconnect/reconnect
 - Test: game cleanup after all players leave
 - Test: named process collision handling (generate unique codes)
+
+**Task 3 [S] (HIGH PRIORITY): Auto-Ready Players with Zero Cards in Pause Phase**
+
+**Current behavior:** In Pause phase, ALL players must click "Ready" before the game continues, even players who have no cards remaining in their hand.
+
+**Expected behavior:** Players with zero cards should be automatically marked as ready when entering Pause phase. Only players with cards need to manually ready up.
+
+**Rationale:** Players with no cards have nothing to contribute during ActivePlay - they're just waiting for the round to end. Requiring them to click Ready is unnecessary friction that slows down gameplay.
+
+**Scope:**
+- Applies to Pause phase only (in Dealing phase, all players receive cards, so everyone always has cards)
+- Server should auto-set `is_ready: True` for players with empty hands when transitioning to Pause
+- UI should reflect this (ready indicator shown, button disabled or hidden for zero-card players)
+
+**Implementation notes:**
+- Modify `transition_phase(game, Pause)` in `shared/src/game.gleam` to auto-ready players with `hand == []`
+- Update `all_players_ready_in_game` check if needed (should work unchanged since auto-readied players count as ready)
+- Client view may need adjustment to show appropriate state for auto-readied players
+
+**Task 4 [S] (HIGH PRIORITY): Display Game Log on Defeat Screen**
+- Game log should be visible on EndGame screen when outcome is Loss
+- Helps players review what went wrong in the final moments
+- Follow existing EndGame layout pattern (two-column on md+, includes log)
+
+**Task 5 [S] (HIGH PRIORITY): Investigate Auto-Play UX After Pause**
+- **Observed:** After mistake, Pause phase with one player having one card. Players ready up, transition directly to Dealing (new round) with no visible auto-play feedback.
+- **Expected behavior (per rules):** Auto-play should apply the single player's cards, complete the round, then transition to Dealing. This IS happening server-side.
+- **Investigate:**
+  1. Verify auto-played cards ARE logged (game log shows "X automatically played Y")
+  2. Check if game log is visible during this transition (Pause → Dealing)
+  3. Consider adding toast/animation feedback for auto-play so players understand what happened
+  4. Verify the pile reflects the auto-played card before transition
+- **Root cause hypothesis:** Auto-play works correctly but UX is confusing - no visual feedback, transition too fast, or game log not visible during Pause phase exit.
+- **Code paths:** `game_play.gleam:61` (`AutoPlayThenDeal`), `perform_auto_play()`, `game_log.gleam:158` (log formatting)
+
+### MEDIUM PRIORITY
+
+**Task 6 [S]: Eliminate GameLogEvent Server Message**
+- `GameLogEvent` is redundant: every action that logs an event also broadcasts `GameStateUpdate` with full `game_log`
+- Client already uses `game_log` from `GameStateUpdate` (replaces whole game state)
+- Remove `GameLogEvent` broadcasts from server (`log_event` function and disconnect/reconnect handlers)
+- Remove `GameLogEvent` handling from client
+- Add timestamp to `PlayerDisconnected`/`PlayerReconnected` messages (these don't trigger `GameStateUpdate`)
+- Server still maintains `game_log` on `Game` type for reconnection state
+- Simplifies protocol and reduces network traffic
+
+### LOW PRIORITY
+
+**Task 7 [M]: Latency Compensation**
+See [latency-compensation.md](latency-compensation.md) for detailed implementation plan.
+Builds on Task 1 (Mistake Audit Resolution) by adding ping/pong latency measurement and latency-adjusted timestamp resolution.
+
+**Task 8 [S]: Spacebar to Play Card**
+- Add keyboard shortcut: spacebar triggers "Play" button in ActivePlay phase
+- Only active when Play button is visible and enabled
+- Consider focus management (don't trigger if typing in input)
+
+**Task 9 [L]: Data Structure Refactoring**
+See `context/data-structures-refactor.md` for detailed implementation plan.
+
+- **9a [S]: PlayedPile opaque type** - Replace `played_cards: List(Card)` with `played_pile: PlayedPile` opaque type that encapsulates card history and cached top card. Includes unit tests. Provides O(1) top card access.
+- **9b [M]: Players List to Dict** - Change `Lobby.players: List(Player)` and `Game.players: List(GamePlayer)` to `Dict(String, Player/GamePlayer)` keyed by user_id. Cleaner lookups via `dict.get` instead of `list.find`. Wire format unchanged (JSON arrays).
+- **9c [S]: VoteState.pending List to Set** - Change `VoteState.pending: List(String)` to `Set(String)` for O(1) membership checks and clearer semantics.
+
+**Task 10 [L]: Type-Safe UserId with youid**
+- Add `youid` dependency to shared/server/client
+- Replace `user_id: String` with `user_id: Uuid` from `youid/uuid`
+- Update `Player`, `GamePlayer`, `Game` (host_user_id), `Model` types
+- Update JSON encoding/decoding (UUID ↔ String conversion at protocol boundary)
+- Update Dict keys where user_id is used (connections, player_latencies, votes, etc.)
+- Update localStorage read/write in client.ffi.mjs
+- Benefits: compile-time safety, can't mix up user_id with nickname/game_code
