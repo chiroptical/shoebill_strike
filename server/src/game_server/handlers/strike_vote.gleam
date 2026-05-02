@@ -122,7 +122,6 @@ pub fn resolve_strike_vote(state: ServerState, game_code: String) -> ServerState
               let updated_game =
                 game_state
                 |> game.transition_phase(protocol.Pause)
-                |> game.reset_ready_states
               let new_games = dict.insert(state.games, game_code, updated_game)
               let state = ServerState(..state, games: new_games)
               broadcast.broadcast_game_message(
@@ -258,7 +257,6 @@ pub fn handle_post_strike(
       let paused_game =
         updated_game
         |> game.transition_phase(protocol.Pause)
-        |> game.reset_ready_states
       let new_games = dict.insert(state.games, game_code, paused_game)
       let state = ServerState(..state, games: new_games)
       broadcast.broadcast_game_message(

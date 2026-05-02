@@ -196,8 +196,23 @@ pub fn all_players_ready_in_game(game: Game) -> Bool {
 }
 
 /// Transition the game to a new phase
+/// When entering Pause phase, automatically readies players with empty hands
+/// (they have nothing to contribute in ActivePlay) and resets others to not ready
 pub fn transition_phase(game: Game, new_phase: Phase) -> Game {
-  Game(..game, phase: new_phase)
+  case new_phase {
+    Pause -> {
+      // Auto-ready players with empty hands, reset others to not ready
+      let updated_players =
+        list.map(game.players, fn(p) {
+          case p.hand {
+            [] -> GamePlayer(..p, is_ready: True)
+            _ -> GamePlayer(..p, is_ready: False)
+          }
+        })
+      Game(..game, phase: Pause, players: updated_players)
+    }
+    _ -> Game(..game, phase: new_phase)
+  }
 }
 
 /// Get a game player by user_id
@@ -310,8 +325,7 @@ fn do_play_card(game: Game, user_id: String) -> Result(Game, String) {
                     True -> Ok(handle_round_complete(game))
                     False ->
                       game
-                      |> reset_ready_states
-                      |> fn(g) { Game(..g, phase: Pause) }
+                      |> transition_phase(Pause)
                       |> Ok
                   }
               }

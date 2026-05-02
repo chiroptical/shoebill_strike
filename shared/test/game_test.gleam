@@ -370,10 +370,13 @@ pub fn play_card_mistake_detected_test() {
       ]),
     ),
   )
-  // Ready states should be reset
-  updated.players
-  |> list.all(fn(p) { p.is_ready == False })
-  |> should.be_true()
+  // Ready states: Alice (no cards) auto-ready, Bob (has cards) not ready
+  let assert Ok(alice) = game.get_game_player(updated, "user_1")
+  alice.is_ready |> should.be_true()
+  alice.hand |> should.equal([])
+
+  let assert Ok(bob_updated) = game.get_game_player(updated, "user_2")
+  bob_updated.is_ready |> should.be_false()
 }
 
 pub fn play_card_mistake_loses_last_life_test() {
@@ -734,4 +737,55 @@ pub fn get_pause_exit_action_countdown_when_no_players_have_cards_test() {
     game.CountdownThenActivePlay -> Nil
     game.AutoPlayThenDeal(_, _, _) -> should.fail()
   }
+}
+
+// Auto-ready tests for Pause phase (Task 3)
+
+pub fn transition_to_pause_auto_readies_players_with_no_cards_test() {
+  // Player with no cards should be auto-ready, player with cards should not
+  let game_state = make_active_game([], [10, 30])
+
+  let paused_game = game.transition_phase(game_state, Pause)
+
+  // Alice has no cards - should be auto-ready
+  let assert Ok(alice) = game.get_game_player(paused_game, "user_1")
+  alice.is_ready |> should.be_true()
+
+  // Bob has cards - should NOT be ready
+  let assert Ok(bob) = game.get_game_player(paused_game, "user_2")
+  bob.is_ready |> should.be_false()
+}
+
+pub fn transition_to_pause_resets_ready_for_players_with_cards_test() {
+  // Create a game where players are already ready
+  let game_state =
+    make_active_game([5], [10])
+    |> fn(g) {
+      Game(
+        ..g,
+        players: list.map(g.players, fn(p) { GamePlayer(..p, is_ready: True) }),
+      )
+    }
+
+  let paused_game = game.transition_phase(game_state, Pause)
+
+  // Both players have cards - both should be reset to not ready
+  let assert Ok(alice) = game.get_game_player(paused_game, "user_1")
+  alice.is_ready |> should.be_false()
+
+  let assert Ok(bob) = game.get_game_player(paused_game, "user_2")
+  bob.is_ready |> should.be_false()
+}
+
+pub fn transition_to_pause_all_empty_hands_all_auto_ready_test() {
+  // Edge case: Both players have no cards - both should be auto-ready
+  let game_state = make_active_game([], [])
+
+  let paused_game = game.transition_phase(game_state, Pause)
+
+  let assert Ok(alice) = game.get_game_player(paused_game, "user_1")
+  alice.is_ready |> should.be_true()
+
+  let assert Ok(bob) = game.get_game_player(paused_game, "user_2")
+  bob.is_ready |> should.be_true()
 }

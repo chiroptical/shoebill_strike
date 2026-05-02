@@ -126,7 +126,20 @@ pub fn view_pause_phase(
               None ->
                 case my_player {
                   Ok(player) ->
-                    actions.view_ready_button_inline(player.is_ready)
+                    case player.hand {
+                      [] ->
+                        // Auto-ready: player has no cards, show disabled indicator
+                        html.button(
+                          [
+                            attribute.class(
+                              "btn bg-gray-600 text-gray-400 cursor-not-allowed flex-1",
+                            ),
+                            attribute.disabled(True),
+                          ],
+                          [element.text("Ready")],
+                        )
+                      _ -> actions.view_ready_button_inline(player.is_ready)
+                    }
                   Error(_) -> element.none()
                 }
             },
