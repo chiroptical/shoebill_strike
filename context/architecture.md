@@ -38,12 +38,14 @@ shoebill_strike/
     ├── src/
     │   ├── client.gleam        # Lustre application entry point
     │   ├── client.ffi.mjs      # JavaScript interop (WebSocket, localStorage)
+    │   ├── icons.gleam         # Game icon SVG definitions
     │   ├── client/
     │   │   ├── model.gleam     # Model type and Screen enum
     │   │   ├── msg.gleam       # Msg type definitions
     │   │   ├── init.gleam      # Initialization logic
     │   │   ├── update.gleam    # Update function and effects
     │   │   ├── effects.gleam   # Effect helpers (WebSocket, clipboard)
+    │   │   ├── server_messages.gleam  # Server message dispatch handler
     │   │   └── views/
     │   │       ├── home.gleam      # Home/create/join screens
     │   │       ├── lobby.gleam     # Lobby screen
@@ -99,8 +101,13 @@ tailwindcss -i client/tailwind.css -o server/priv/static/styles.css --minify
 
 - **Dark mode primary**: `bg-gray-900` (page), `bg-gray-800` (cards), `bg-gray-700` (elements)
 - **Text**: `text-gray-100` (primary), `text-gray-400` (secondary)
-- **Status**: `text-green-400` (ready), `text-red-400` (error), `text-orange-400` (warning)
-- **Buttons**: `bg-emerald-600` (primary), `bg-orange-600` (toggle), `bg-gray-700` (secondary)
+- **Status**: `text-red-400` (error)
+- **Custom button colors** (hex values in tailwind.css):
+  - `#687487` (btn-primary) - muted blue-gray
+  - `#876884` (btn-ready) - muted purple
+  - `#68876B` (btn-approve) - muted green
+  - `#877B68` (btn-strike) - muted gold
+  - `bg-gray-700` (btn-secondary)
 
 ### Custom Component Classes
 
@@ -109,12 +116,14 @@ Defined in `@layer components` in `client/tailwind.css`:
 | Class | Purpose |
 |-------|---------|
 | `.btn` | Base button: full width, padding, rounded, font-semibold, transition |
-| `.btn-primary` | Primary action (emerald green) |
-| `.btn-ready` | Ready toggle (orange) |
+| `.btn-primary` | Primary action (muted blue-gray) |
+| `.btn-ready` | Ready toggle (muted purple) |
 | `.btn-secondary` | Secondary action (gray) |
 | `.btn-disabled` | Disabled state (muted, cursor-not-allowed) |
-| `.btn-approve` | Vote approve (emerald green) |
+| `.btn-approve` | Vote approve (muted green) |
 | `.btn-reject` | Vote reject (red) |
+| `.btn-strike` | Strike action (muted gold) |
+| `.btn-abandon` | Abandon action (muted red) |
 | `.btn-small` | Smaller button variant |
 | `.btn-copy` | Copy to clipboard button |
 | `.input` | Text input with focus ring |
@@ -131,10 +140,22 @@ Defined in `@layer components` in `client/tailwind.css`:
 | Class | Purpose |
 |-------|---------|
 | `.game-container` | Responsive width container for game screens |
-| `.game-log` | Fixed bottom overlay on mobile, hidden on lg+ |
-| `.game-log-sidebar` | Scrollable sidebar content for lg+ screens |
+| `.game-screen-wrapper` | Wrapper for game screen layout |
+| `.game-log` | Fixed bottom overlay on mobile, sidebar on lg+ |
+| `.game-log-list` | Scrollable list container for log entries |
+| `.game-log-entry` | Individual log entry with timestamp and event |
 | `.hand-grid` | Responsive card grid: 4 cols (mobile) → 6 cols (md) → 8 cols (lg) |
 | `.other-players-grid` | Responsive player grid: 3 cols (mobile) → 2 cols (md) → 1 col (lg) |
+| `.responsive-two-col` | Two-column responsive layout |
+| `.responsive-three-col` | Three-column responsive layout |
+| `.col-main` | Main content column |
+| `.col-side` | Side content column |
+| `.col-players` | Players list column |
+| `.col-log` | Game log column |
+| `.reward-guide-toggle` | Toggle button for reward guide |
+| `.reward-guide` | Reward guide panel container |
+| `.reward-guide-list` | Reward list items |
+| `.reward-guide-item` | Individual reward item |
 
 **IMPORTANT** media queries should not be used for the mobile designs
 
@@ -146,9 +167,9 @@ Defined in `@layer components` in `client/tailwind.css`:
 | Game (play phases) | Stacked, log overlay | Same as mobile | Two columns (main \| log sidebar) |
 | EndGame | Stacked | Two columns (stats+buttons \| players+log) | Same as md |
 
-**Game Phase Layout Pattern (lg+ screens):**
+**Game Phase Layout Pattern:**
 
-All game phases (Dealing, ActivePlay, Pause, Strike, AbandonVote) use the same layout structure:
+All game phases (Dealing, ActivePlay, Pause, Strike, AbandonVote) use responsive layout with a single game log component:
 
 ```html
 <!-- Outer container - centers content -->
@@ -159,21 +180,23 @@ All game phases (Dealing, ActivePlay, Pause, Strike, AbandonVote) use the same l
     <div class="flex flex-col gap-3 w-full max-w-md lg:w-[28rem]">
       <!-- Header, players, hand, buttons -->
     </div>
-    <!-- Game log sidebar - absolutely positioned to match main column height -->
-    <div class="hidden lg:block absolute left-full top-0 bottom-0 ml-4 w-64 overflow-hidden">
-      <!-- Scrollable log content -->
+    <!-- Game log - responsive: fixed bottom on mobile, sidebar on lg+ -->
+    <div class="game-log">
+      <!-- Single log component that adapts via CSS -->
     </div>
   </div>
-  <!-- Mobile game log (fixed at bottom, hidden on lg+) -->
 </div>
 ```
 
 Key aspects:
 - Wrapper has `relative` positioning to act as the positioned ancestor
 - Main column has fixed width (`lg:w-[28rem]`) and determines the container height
-- Log sidebar uses `absolute left-full top-0 bottom-0` to position itself to the right and stretch to match the main column's height
-- `overflow-hidden` on the sidebar wrapper allows the inner `.game-log-sidebar` (with `overflow-y: auto`) to scroll
-- On mobile/tablet, the fixed bottom `.game-log` overlay is shown instead
+- **Single game log component** - renders once, uses CSS to adapt between mobile overlay and desktop sidebar
+- On mobile/tablet: `.game-log` is fixed at bottom of screen
+- On lg+ screens: `.game-log` is positioned as sidebar to the right of main content
+
+**IMPORTANT: Responsive Design Pattern**
+The game log must NOT be rendered twice with one hidden. This violates responsive design principles. Instead, render the component once and use CSS breakpoints to change its layout/positioning.
 
 **Button Position Consistency:** The Ready button (Lobby/Dealing/Pause) and Play button (ActivePlay) are positioned in the same column across screen transitions for easier discovery.
 
@@ -187,6 +210,39 @@ Defined in `@layer utilities` in `client/tailwind.css`:
 | `.animate-breathe` | Breathing animation (3s cycle) |
 | `.animate-breathe-fast` | Fast breathing (1s cycle) |
 | `.animate-urgent` | Red glow pulse for urgent timer (≤3s) |
+| `.animate-toast-in` | Toast entrance animation (slide up, fade in) |
+| `.animate-toast-out` | Toast exit animation (slide down, fade out) |
+
+### Game Log Responsive Design
+
+The game log component **must be rendered exactly once** and adapt its layout via CSS breakpoints. This is a core responsive design principle.
+
+**Anti-pattern (DO NOT DO THIS):**
+```html
+<!-- BAD: Rendering twice with one hidden -->
+<div class="lg:hidden"><!-- mobile game log --></div>
+<div class="hidden lg:block"><!-- desktop game log --></div>
+```
+
+**Correct pattern:**
+```html
+<!-- GOOD: Single render, CSS adapts layout -->
+<div class="game-log">
+  <div class="game-log-list">
+    <!-- Log entries rendered once -->
+  </div>
+</div>
+```
+
+The `.game-log` class handles the responsive behavior:
+- **Mobile/tablet**: Fixed position at bottom of screen, collapsible overlay
+- **Desktop (lg+)**: Positioned as sidebar next to main content
+
+This approach:
+- Avoids duplicate DOM nodes
+- Prevents state synchronization issues
+- Reduces bundle size and rendering work
+- Follows mobile-first responsive design principles
 
 ### Vote Timer Urgency Colors
 
@@ -347,45 +403,52 @@ Defines all types shared between client and server:
 
 ```gleam
 // Lobby types
-type Player { user_id, nickname, is_ready, is_creator }  // user_id is UUID, sole identifier
+type Player { user_id, nickname, is_ready, is_creator, is_connected }  // user_id is UUID, sole identifier
 type Lobby { code, players, games_played }
 
 // Game types
 type Card = Int  // 1-100
 type GameOutcome { Win | Loss | Abandoned }
 type Phase { Dealing | ActivePlay | Pause | Strike | AbandonVote | EndGame(GameOutcome) }  // GameSetup is server-side only, not sent to clients
-type GamePlayer { user_id, nickname, hand, is_ready }  // user_id is UUID, sole identifier
+type GamePlayer { user_id, nickname, hand, is_ready, is_connected, last_card_played }  // user_id is UUID, sole identifier
 type MistakeInfo { player_nickname, played_card, mistake_cards: List(#(String, Card)) }
 type Game { code, host_user_id, games_played, players, current_round, total_rounds, lives, strikes, phase, played_cards, last_mistake, abandon_vote_previous_phase, game_start_timestamp, game_log }
 
 // Game log types
-type GameEventType { RoundStarted(round) | CardPlayed(player_nickname, card, autoplayed) | MistakeDiscard(player_nickname, card) | StrikeDiscard(player_nickname, card) | LifeLost(lives_remaining) | StrikeUsed(stars_remaining) }
+type GameEventType { RoundStarted(round) | CardPlayed(player_nickname, card, autoplayed) | MistakeDiscard(player_nickname, card) | StrikeDiscard(player_nickname, card) | LifeLost(lives_remaining) | StrikeUsed(stars_remaining) | PlayerDisconnectedEvent(nickname) | PlayerReconnectedEvent(nickname) }
 type GameEvent { timestamp: Timestamp, event_type: GameEventType }
 
 // Messages (server identifies user from connection's user_id)
-type ClientMessage { CreateGame(user_id, nickname) | JoinGame(code, user_id, nickname) | ToggleReady | StartGame | ToggleReadyInGame | PlayCard | InitiateStrikeVote | CastStrikeVote(approve) | InitiateAbandonVote | CastAbandonVote(approve) | LeaveGame | RestartGame | PongServer(token) }
-type ServerMessage { GameCreated(code) | GameJoined | LobbyState | GameStarted | ServerError | GameStateUpdate | CountdownTick | PhaseTransition | StrikeVoteUpdate | AbandonVoteUpdate | PlayerLeft(user_id, new_host_user_id?) | YouLeft | PingClient(token) | GameLogEvent(event) }
+type ClientMessage { CreateGame(user_id, nickname) | JoinGame(code, user_id, nickname) | ToggleReady | StartGame | ToggleReadyInGame | PlayCard | InitiateStrikeVote | CastStrikeVote(approve) | InitiateAbandonVote | CastAbandonVote(approve) | LeaveGame | RestartGame }
+type ServerMessage { GameCreated(code) | GameJoined | LobbyState | GameStarted | ServerError | GameStateUpdate | CountdownTick | PhaseTransition | StrikeVoteUpdate | AbandonVoteUpdate | PlayerLeft(user_id, new_host_user_id?) | YouLeft | PlayerDisconnected(user_id) | PlayerReconnected(user_id) | GameLogEvent(event) }
 ```
 
 ### shared/game.gleam
 Pure functions for game logic (no side effects, easily testable):
 
 ```gleam
+// Types
+type PauseExitAction { AutoPlayThenDeal(user_id, nickname, cards) | CountdownThenActivePlay }
+
+// Functions
 fn create_deck() -> List(Card)                    // [1..100]
 fn shuffle_deck(deck, random_fn) -> List(Card)    // Fisher-Yates shuffle
 fn get_game_config(player_count) -> #(lives, stars, total_rounds)
 fn create_game_from_lobby(lobby, shuffle_fn) -> Game  // sets host_user_id from lobby creator, games_played from lobby
+fn get_game_player(game, user_id) -> Result(GamePlayer, Nil)  // lookup player by user_id
 fn toggle_ready_in_game(game, user_id) -> Result(Game, String)
 fn all_players_ready_in_game(game) -> Bool
 fn transition_phase(game, phase) -> Game
 fn play_card(game, user_id) -> Result(Game, String)  // plays lowest card, detects mistakes
 fn deal_round(game, shuffle_fn) -> Game                // deal new round, reset ready states
+fn reset_ready_states(game) -> Game                    // reset all players to not ready
 fn get_strike_discards(game) -> List(#(String, Card))  // preview discards
 fn apply_strike(game) -> Result(Game, String)   // consume star, discard lowest cards
 fn game_to_lobby(game) -> Lobby                        // convert game back to lobby for restart
 fn phase_to_string(phase) -> String
 fn get_auto_play_candidate(game) -> Option(#(user_id, nickname, cards))  // check if only one player has cards
 fn apply_auto_play(game, user_id) -> Game              // auto-play all cards for one player
+fn get_pause_exit_action(game) -> PauseExitAction      // determine action when exiting Pause phase
 ```
 
 ### server/game_server.gleam and game_server/
@@ -462,6 +525,20 @@ type ServerMsg {
 - `cast_abandon_vote` - Record player vote, check for resolution
 - `resolve_abandon_vote` - Abandon game or return to previous phase
 
+**game_server/handlers/lobby.gleam** - Lobby management handlers:
+- `handle_create_game` - Create new lobby, generate code
+- `handle_join_game` - Join existing lobby by code
+- `handle_start_game` - Host starts game from lobby
+
+**game_server/handlers/game_play.gleam** - Game play handlers:
+- `handle_toggle_ready_in_game` - Toggle player ready state
+- `handle_play_card` - Process card play request
+- `check_and_perform_auto_play` - Auto-play when single player has cards
+
+**game_server/handlers/end_game.gleam** - End game handlers:
+- `handle_leave_game` - Remove player from game
+- `handle_restart_game` - Host restarts game from EndGame phase
+
 ### server/server.gleam
 HTTP server and WebSocket handling:
 
@@ -476,27 +553,42 @@ Lustre application (Elm architecture):
 
 ```gleam
 type Model {
-  screen: Screen                    // HomeScreen | LobbyScreen | GameScreen | ...
-  user_id: Option(String)           // UUID, stored in localStorage
+  route: Route                      // Current URL route (for mock routes)
+  screen: Screen                    // HomeScreen | CreateScreen | JoinScreen | LobbyScreen | GameScreen
+  user_id: String                   // UUID, stored in localStorage
   current_lobby: Option(Lobby)
   current_game: Option(Game)
   countdown: Option(Int)
   vote_status: Option(#(List(#(String, Bool)), List(String), Int))  // strike votes
   abandon_vote_status: Option(#(List(#(String, Bool)), List(String), Int))  // abandon votes
-  // ... form fields, errors
+  create_nickname: String           // Form field: nickname for creating game
+  join_code: String                 // Form field: game code to join
+  join_nickname: String             // Form field: nickname for joining
+  error: Option(String)             // Error message to display
+  toast: ToastState                 // Toast notification state
+  is_reward_guide_open: Bool        // Whether reward guide panel is open
 }
 
 type Msg {
-  ServerMessage(ServerMessage)      // From WebSocket
-  ToggleReadyClicked               // User actions
+  // Navigation
+  OnRouteChange(Uri)
+  ShowHome | ShowCreateGame | ShowJoinGame
+  // Form updates
+  UpdateCreateNickname(String) | UpdateJoinCode(String) | UpdateJoinNickname(String)
+  // Game actions
+  CreateGameClicked | JoinGameClicked | StartGameClicked
+  ToggleReadyClicked | ToggleReadyInGameClicked
   PlayCardClicked
-  InitiateStrikeClicked
-  CastStrikeVoteClicked(Bool)
-  InitiateAbandonVoteClicked
-  CastAbandonVoteClicked(Bool)
-  LeaveGameClicked
-  RestartGameClicked
-  // ...
+  InitiateStrikeClicked | CastStrikeVoteClicked(Bool)
+  InitiateAbandonVoteClicked | CastAbandonVoteClicked(Bool)
+  LeaveGameClicked | RestartGameClicked
+  // UI actions
+  CopyShareCode(String) | CopyShareLink(String)
+  ToastStartHide | ToastHideComplete
+  ToggleRewardGuide
+  // Server
+  ServerMessage(ServerMessage)
+  NoOp
 }
 ```
 
@@ -532,33 +624,12 @@ Client                          Server
   │◀── GameStateUpdate(game) ─────│ (player now ready)
   │                               │
   │   (when all ready)            │
-  │◀── PingClient(token) ─────────│ (latency measurement before countdown)
-  │─── PongServer(token) ─────────▶│ (client echoes token unchanged)
-  │                               │ server computes latency
   │◀── CountdownTick(3) ──────────│
   │◀── CountdownTick(2) ──────────│ (1 second intervals)
   │◀── CountdownTick(1) ──────────│
   │◀── CountdownTick(0) ──────────│
   │◀── PhaseTransition(ActivePlay)│
 ```
-
-**Latency Ping/Pong:**
-```
-Client                          Server
-  │                               │
-  │   (on game state transition)  │
-  │                               │ pong_timestamp = get_server_time()
-  │                               │ token = casper.encrypt(timestamp, ping_key)
-  │◀── PingClient(token) ─────────│
-  │                               │
-  │─── PongServer(token) ─────────▶│ pong_timestamp = get_server_time() // FIRST
-  │                               │ ping_timestamp = casper.decrypt(token) // THEN
-  │                               │ latency = pong_timestamp - ping_timestamp
-  │                               │ store in player_latencies
-```
-
-The token is an encrypted timestamp that the client echoes back unchanged.
-This avoids storing pending ping state per player and prevents tampering.
 
 **Strike Vote:**
 ```
@@ -644,7 +715,6 @@ Notes:
 { "type": "cast_abandon_vote", "approve": true }
 { "type": "leave_game" }
 { "type": "restart_game" }
-{ "type": "pong_server", "token": "encrypted_base64_token" }
 
 // Server -> Client
 { "type": "game_created", "code": "ABC123" }
@@ -658,7 +728,8 @@ Notes:
 { "type": "abandon_vote_update", "votes": [{ "user_id": "550e8400-...", "approve": true }], "pending": ["660e8400-..."], "seconds_remaining": 8 }
 { "type": "player_left", "user_id": "550e8400-...", "new_host_user_id": "660e8400-..." }
 { "type": "you_left" }
-{ "type": "ping_client", "token": "encrypted_base64_token" }
+{ "type": "player_disconnected", "user_id": "550e8400-..." }
+{ "type": "player_reconnected", "user_id": "550e8400-..." }
 { "type": "game_log_event", "event": { "timestamp": 1712345678901, "event_type": "card_played", "player_nickname": "Alice", "card": 42 } }
 ```
 
@@ -742,137 +813,15 @@ The following table defines all phase transitions and whether they include a cou
 **Testable decision logic:**
 The `game.get_pause_exit_action()` function encapsulates the decision for Rules #2 and #3, returning either `AutoPlayThenDeal` or `CountdownThenActivePlay`. This is unit tested in `shared/test/game_test.gleam`.
 
-## Transition-Time Behavior
+## Transition-Time Behavior (Planned)
 
-Certain behaviors need to run at specific points during game state transitions. Currently this includes latency measurement (ping/pong), but future features may also hook into transitions (e.g., game log events, analytics).
+> **Note:** Latency compensation is documented in `context/remaining-tasks.md` as Task 5. The ping/pong mechanism and latency-based mistake resolution described below are **not yet implemented**.
 
-### Ping Timing
+Certain behaviors need to run at specific points during game state transitions. Future features will include latency measurement (ping/pong) for fair mistake resolution.
 
-Latency pings fire at specific moments tied to the countdown flow:
+### Planned: Latency-Based Mistake Resolution
 
-```
-All players ready
-       │
-       ▼
-┌─────────────────┐
-│  Send PingClient │ ◄── Ping fires HERE, before countdown starts
-│  to all players  │
-└─────────────────┘
-       │
-       ▼ (don't wait for pong — countdown proceeds immediately)
-┌─────────────────┐
-│ CountdownTick(3) │
-│ CountdownTick(2) │
-│ CountdownTick(1) │
-│ CountdownTick(0) │
-└─────────────────┘
-       │
-       ▼
-┌─────────────────┐
-│ PhaseTransition  │
-│ (to ActivePlay)  │
-└─────────────────┘
-```
-
-**Key points:**
-- Ping is sent when all players are ready, immediately before the countdown begins
-- Server does NOT wait for pong responses before starting countdown
-- Pong responses arrive asynchronously and update `player_latencies`
-- This happens in both **Dealing Phase** and **Pause Phase** (the two phases with countdowns)
-- Latency values are used for mistake resolution (see below)
-- Latency persists across reconnection (keyed by `user_id`)
-
-### Latency-Based Mistake Resolution
-
-When a card is played that appears to be a mistake (played card > another player's lowest card), the server enters a brief buffering window to collect any in-flight PlayCard messages before making a final decision:
-
-```
-Card played (appears to be mistake)
-       │
-       ▼
-┌─────────────────────────────┐
-│  Add card to buffered_cards │ ◄── Initialize MistakeResolutionState (Dict keyed by user_id)
-│  Start buffer timer         │     buffer = min(max(latencies) / 2, 500ms), default 300ms
-└─────────────────────────────┘
-       │
-       ▼
-┌─────────────────────────────┐
-│  Buffer incoming PlayCard   │ ◄── Add to Dict (ignores duplicates from same user)
-│  messages                   │     Block vote initiation during this time
-└─────────────────────────────┘
-       │
-       ▼ (timer expires)
-┌─────────────────────────────┐
-│  Adjust timestamps          │  effective_time = server_time - (latency / 2)
-│  (default latency: 25ms)    │  tiebreaker: FIFO if adjusted times equal
-└─────────────────────────────┘
-       │
-       ▼
-┌─────────────────────────────┐
-│  Sort cards by adjusted     │
-│  timestamps                 │
-└─────────────────────────────┘
-       │
-       ▼
-┌─────────────────────────────┐
-│  Check if cards are in      │
-│  valid ascending order      │
-└─────────────────────────────┘
-       │
-       ├── Invalid ──▶ Real mistake, discard lower cards, lose 1 life, Pause
-       │
-       ▼ (valid)
-┌─────────────────────────────┐
-│  Apply all cards in order   │
-└─────────────────────────────┘
-       │
-       ▼
-┌─────────────────────────────┐
-│  Any player have card <     │
-│  new pile top?              │
-└─────────────────────────────┘
-       │
-       ├── Yes ──▶ Still a mistake, discard those cards, lose 1 life, Pause
-       │
-       └── No ──▶ No mistake, continue ActivePlay (check round completion)
-```
-
-**Key points:**
-- Server processes cards in arrival order during normal play
-- When a potential mistake is detected, server enters MistakeResolution (internal state, not visible to clients)
-- Buffer window = `min(max(player_latencies) / 2, 500ms)`, defaulting to 300ms if no latency data
-- Default latency for unknown players: 25ms
-- PlayCard messages received during the buffer window are collected in a Dict keyed by `user_id` (deduplicates naturally)
-- Duplicate PlayCard from same user during buffer → ignored
-- Votes (strike, abandon) are blocked during active resolution
-- After buffer expires:
-  - Adjust timestamps: `effective_time = server_receive_time - (latency / 2)`
-  - Tiebreaker for identical adjusted timestamps: FIFO (original arrival order)
-  - Sort cards by adjusted timestamp
-  - If ascending order is valid:
-    - Apply all cards
-    - Check if any player has card < new pile top → if yes, still a mistake (discard those cards, lose one life, Pause)
-    - If no remaining lower cards → continue ActivePlay (check for round completion)
-  - If ascending order invalid → real mistake, discard lower cards, lose one life, Pause
-- One life lost per resolution event, regardless of how many cards discarded
-- PlayCard during Pause phase → rejected
-- This compensates for network latency differences between players
-
-### Where Pings Fire
-
-| Phase | Trigger | Notes |
-|-------|---------|-------|
-| Dealing | All players ready | Before 3-2-1 countdown to ActivePlay |
-| Pause | All players ready | Before 3-2-1 countdown to resume ActivePlay |
-
-Pings do NOT fire on:
-- Strike phase entry (no countdown, immediate voting)
-- AbandonVote phase entry (no countdown, immediate voting)
-- EndGame phase entry (game over, latency not relevant)
-
-### Future Consideration
-
-If we add more transition-time behaviors, consider consolidating them into a single "transition hook" pattern rather than scattering logic across multiple handlers. For now, ping logic lives in the countdown initiation path.
+When implemented, the server will use latency compensation to handle near-simultaneous card plays fairly. See `context/remaining-tasks.md` for the full implementation plan.
 
 ## Design Decisions
 

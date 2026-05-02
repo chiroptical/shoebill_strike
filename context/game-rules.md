@@ -296,6 +296,8 @@ The game maintains a timestamped log of events for player reference. The log is 
 - **Strike Used:** "Strike used! N remaining"
 - **Strike Discard:** "Carol discarded 7 (star)"
 - **Life Lost:** "Life lost! N remaining"
+- **Player Disconnected:** "Alice disconnected"
+- **Player Reconnected:** "Alice reconnected"
 
 **Display Format:**
 - Timestamps shown as seconds since game start (e.g., "12.50s")

@@ -103,7 +103,12 @@ pub fn handle_server_msg(
       }
 
       #(
-        Model(..model, current_game: Some(game), screen: GameScreen, toast: toast),
+        Model(
+          ..model,
+          current_game: Some(game),
+          screen: GameScreen,
+          toast: toast,
+        ),
         toast_effect,
       )
     }
