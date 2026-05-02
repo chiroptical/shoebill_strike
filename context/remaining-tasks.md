@@ -105,25 +105,38 @@ Connection Process (per WebSocket)
 - Test: game cleanup after all players leave
 - Test: named process collision handling (generate unique codes)
 
-**Task 3 [S] (HIGH PRIORITY): Display Game Log on Defeat Screen**
-- Game log should be visible on EndGame screen when outcome is Loss
-- Helps players review what went wrong in the final moments
-- Follow existing EndGame layout pattern (two-column on md+, includes log)
-
-**Task 4 [S] (HIGH PRIORITY): Investigate Auto-Play UX After Pause**
-- **Observed:** After mistake, Pause phase with one player having one card. Players ready up, transition directly to Dealing (new round) with no visible auto-play feedback.
-- **Expected behavior (per rules):** Auto-play should apply the single player's cards, complete the round, then transition to Dealing. This IS happening server-side.
-- **Investigate:**
-  1. Verify auto-played cards ARE logged (game log shows "X automatically played Y")
-  2. Check if game log is visible during this transition (Pause → Dealing)
-  3. Consider adding toast/animation feedback for auto-play so players understand what happened
-  4. Verify the pile reflects the auto-played card before transition
-- **Root cause hypothesis:** Auto-play works correctly but UX is confusing - no visual feedback, transition too fast, or game log not visible during Pause phase exit.
-- **Code paths:** `game_play.gleam:61` (`AutoPlayThenDeal`), `perform_auto_play()`, `game_log.gleam:158` (log formatting)
-
 ## MEDIUM PRIORITY
 
-**Task 5 [S]: Eliminate GameLogEvent Server Message**
+**Task 3 [M]: Structured JSON Server Logging**
+Replace ad-hoc `io.println` calls with structured JSON logging for better operability.
+
+**3a [S]: Create logging module**
+- Create `server/src/log.gleam` with structured JSON output
+- Functions: `info`, `info_at`, `warn`, `warn_at`, `error`, `error_at`
+- `_at` variants accept a timestamp for when server already has one
+- JSON format: `{"ts": "...", "level": "info", "event": "...", "game": "...", "user": "...", ...}`
+- Context passed as `List(#(String, String))` for flexible key-value pairs
+
+```gleam
+// API
+pub fn info(event: String, context: List(#(String, String)))
+pub fn info_at(event: String, context: List(#(String, String)), ts: Timestamp)
+pub fn error(event: String, context: List(#(String, String)))
+pub fn error_at(event: String, context: List(#(String, String)), ts: Timestamp)
+```
+
+**3b [M]: Migrate server logs**
+- Replace `io.println("[Server] ...")` calls with structured `log.info`/`log.error`
+- Always include `game` and `user` context where available
+- Use consistent event names (e.g., `toggle_ready`, `card_played`, `game_created`)
+- ~50 call sites to migrate
+
+**3c [S]: Remove or gate client logs**
+- Client `io.println` calls go to browser console, not useful in production
+- Either remove entirely or gate behind a debug flag
+- ~20 call sites
+
+**Task 4 [S]: Eliminate GameLogEvent Server Message**
 - `GameLogEvent` is redundant: every action that logs an event also broadcasts `GameStateUpdate` with full `game_log`
 - Client already uses `game_log` from `GameStateUpdate` (replaces whole game state)
 - Remove `GameLogEvent` broadcasts from server (`log_event` function and disconnect/reconnect handlers)
@@ -134,23 +147,23 @@ Connection Process (per WebSocket)
 
 ## LOW PRIORITY
 
-**Task 6 [M]: Latency Compensation**
+**Task 5 [M]: Latency Compensation**
 See [latency-compensation.md](latency-compensation.md) for detailed implementation plan.
 Builds on Task 1 (Mistake Audit Resolution) by adding ping/pong latency measurement and latency-adjusted timestamp resolution.
 
-**Task 7 [S]: Spacebar to Play Card**
+**Task 6 [S]: Spacebar to Play Card**
 - Add keyboard shortcut: spacebar triggers "Play" button in ActivePlay phase
 - Only active when Play button is visible and enabled
 - Consider focus management (don't trigger if typing in input)
 
-**Task 8 [L]: Data Structure Refactoring**
+**Task 7 [L]: Data Structure Refactoring**
 See `context/data-structures-refactor.md` for detailed implementation plan.
 
-- **8a [S]: PlayedPile opaque type** - Replace `played_cards: List(Card)` with `played_pile: PlayedPile` opaque type that encapsulates card history and cached top card. Includes unit tests. Provides O(1) top card access.
-- **8b [M]: Players List to Dict** - Change `Lobby.players: List(Player)` and `Game.players: List(GamePlayer)` to `Dict(String, Player/GamePlayer)` keyed by user_id. Cleaner lookups via `dict.get` instead of `list.find`. Wire format unchanged (JSON arrays).
-- **8c [S]: VoteState.pending List to Set** - Change `VoteState.pending: List(String)` to `Set(String)` for O(1) membership checks and clearer semantics.
+- **7a [S]: PlayedPile opaque type** - Replace `played_cards: List(Card)` with `played_pile: PlayedPile` opaque type that encapsulates card history and cached top card. Includes unit tests. Provides O(1) top card access.
+- **7b [M]: Players List to Dict** - Change `Lobby.players: List(Player)` and `Game.players: List(GamePlayer)` to `Dict(String, Player/GamePlayer)` keyed by user_id. Cleaner lookups via `dict.get` instead of `list.find`. Wire format unchanged (JSON arrays).
+- **7c [S]: VoteState.pending List to Set** - Change `VoteState.pending: List(String)` to `Set(String)` for O(1) membership checks and clearer semantics.
 
-**Task 9 [L]: Type-Safe UserId with youid**
+**Task 8 [L]: Type-Safe UserId with youid**
 - Add `youid` dependency to shared/server/client
 - Replace `user_id: String` with `user_id: Uuid` from `youid/uuid`
 - Update `Player`, `GamePlayer`, `Game` (host_user_id), `Model` types

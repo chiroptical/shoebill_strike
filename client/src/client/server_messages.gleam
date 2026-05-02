@@ -1,6 +1,8 @@
 import client/effects
-import client/model.{type Model, GameScreen, HomeScreen, LobbyScreen, Model}
-import client/msg.{type Msg}
+import client/model.{
+  type Model, GameScreen, HomeScreen, LobbyScreen, Model, ToastShowing,
+}
+import client/msg.{type Msg, ToastStartHide}
 import gleam/int
 import gleam/io
 import gleam/list
@@ -69,9 +71,40 @@ pub fn handle_server_msg(
         "[Client] Game state update received. Players: "
         <> int.to_string(list.length(game.players)),
       )
+
+      // Check for auto-play round completion: round increased and has autoplayed cards
+      let #(toast, toast_effect) = case model.current_game, game.phase {
+        Some(old_game), protocol.Dealing
+          if game.current_round > old_game.current_round
+        -> {
+          let has_autoplay =
+            list.any(game.game_log, fn(e) {
+              case e.event_type {
+                protocol.CardPlayed(_, _, True) -> True
+                _ -> False
+              }
+            })
+          case has_autoplay {
+            True -> {
+              let completed_round = game.current_round - 1
+              #(
+                ToastShowing(
+                  "Round " <> int.to_string(completed_round) <> " successful!",
+                ),
+                effect.from(fn(dispatch) {
+                  effects.dispatch_after_ms(dispatch, ToastStartHide, 2000)
+                }),
+              )
+            }
+            False -> #(model.toast, effect.none())
+          }
+        }
+        _, _ -> #(model.toast, effect.none())
+      }
+
       #(
-        Model(..model, current_game: Some(game), screen: GameScreen),
-        effect.none(),
+        Model(..model, current_game: Some(game), screen: GameScreen, toast: toast),
+        toast_effect,
       )
     }
 
