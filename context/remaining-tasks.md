@@ -171,3 +171,69 @@ See `context/data-structures-refactor.md` for detailed implementation plan.
 - Update Dict keys where user_id is used (connections, player_latencies, votes, etc.)
 - Update localStorage read/write in client.ffi.mjs
 - Benefits: compile-time safety, can't mix up user_id with nickname/game_code
+
+**Task 9 [M]: Semantic Types for Boolean Fields**
+Replace boolean fields with semantic types to eliminate boolean blindness and improve extensibility.
+
+- **9a [S]: ConnectionStatus type** - Replace `is_connected: Bool` in `Player` and `GamePlayer` with `ConnectionStatus { Connected | Disconnected }`. Affects `protocol/types.gleam`, views, and handlers.
+- **9b [S]: ReadyState type** - Replace `is_ready: Bool` in `Player` and `GamePlayer` with `ReadyState { Ready | NotReady }`. Affects same locations.
+- **9c [S]: PlayerRole type** - Replace `is_creator: Bool` in `Player` with `PlayerRole { Host | Participant }`. Clearer semantics for host identification.
+- **9d [S]: Vote type** - Replace `approve: Bool` in vote messages and `Dict(String, Bool)` in `VoteState` with `Vote { Approve | Reject }`. Affects `protocol/types.gleam`, `state.gleam`, vote handlers.
+
+**Task 10 [S]: PlayerCount Enum for Game Config**
+- Replace `get_game_config(player_count: Int)` catch-all with `PlayerCount { Two | Three | Four }` enum
+- Eliminates magic default `#(2, 1, 12)` for invalid player counts
+- Location: `shared/src/game.gleam:72-79`
+
+**Task 11 [S]: ConnectionState Enum**
+- Replace `lobby_code: Option(String), game_code: Option(String)` in `ConnectionInfo` with `ConnectionState { InLobby(String) | InGame(String) | Idle }`
+- Prevents invalid state where both codes are `Some` simultaneously
+- Location: `server/src/game_server/state.gleam:13-14`
+
+**Task 12 [S]: VoteStatus Named Type**
+- Replace opaque tuple `#(List(#(String, Bool)), List(String), Int)` with named `VoteStatus` record type
+- Fields: `votes: List(#(String, Vote))`, `pending: List(String)`, `seconds_remaining: Int`
+- Affects `client/src/client/model.gleam:31-32`, `init.gleam`, `server_messages.gleam`
+
+**Task 13 [S]: Replace Magic Defaults with Assertions**
+Replace placeholder values for "impossible" cases with `let assert` to crash loudly in development.
+
+- `game.gleam:54`: `result.unwrap(0)` in `swap` function (Card 0 is invalid)
+- `game.gleam:147`: `result.unwrap("")` for missing `host_user_id`
+- `game_play.gleam:218`: `result.unwrap(0)` for played card
+- `connection.gleam:56,110`: `result.unwrap(user_id)` for nickname lookup
+- `lobby.gleam:17`: `result.unwrap("A")` in `generate_code`
+
+**Task 14 [S]: Explicit Error Handling in Handlers**
+Replace silent `Error(_) -> state` patterns with logging or explicit error messages.
+
+- Vote handlers silently return unchanged state when game/vote not found
+- Connection handlers silently ignore missing connections
+- Affected files: `strike_vote.gleam`, `abandon_vote.gleam`, `connection.gleam`, `helpers.gleam`
+
+**Task 15 [S]: Remove Redundant Comments**
+Delete comments that restate code throughout codebase (~50+ instances).
+
+Examples:
+- `// Broadcast updated game state` before broadcast calls
+- `// Send message to user` before `send_message` calls
+- Function docstrings that repeat function names
+
+**Task 16 [S]: Extract Icon Helper Function**
+- Extract common SVG wrapper pattern from `icons.gleam` into helper function
+- Reduces ~140 lines of boilerplate to ~30 lines
+- Pattern repeated 9 times with only path data changing
+
+**Task 17 [S]: FFI Parse Failure Handling**
+- Replace magic defaults in `client.ffi.mjs` parse functions with explicit failures
+- `parseOutcome()` defaults to `Loss` (line 66)
+- `parsePhase()` defaults to `Dealing` (lines 77, 92)
+- `parseGameEventType()` defaults to `RoundStarted(0)` (line 123)
+- Consider returning null and handling at Gleam boundary
+
+**Task 18 [S]: Flatten Deep Handler Nesting**
+Reduce nesting in vote handlers using `use` expressions or helper extraction.
+
+- `vote_initiation.gleam`: 5-6 levels deep in all handlers
+- `abandon_vote.gleam:122-190`: 3+ levels in `resolve_abandon_vote`
+- `end_game.gleam:136-293`: 8+ levels in `handle_restart_game`
