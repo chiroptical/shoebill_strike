@@ -204,7 +204,7 @@ pub fn view_end_game(
   html.div(
     [
       attribute.class(
-        "min-h-screen p-4 flex flex-col items-center gap-4 pb-20 lg:pb-24 lg:justify-center",
+        "min-h-screen p-4 flex flex-col items-center gap-4 lg:justify-center",
       ),
     ],
     [
@@ -304,14 +304,14 @@ pub fn view_end_game(
               ),
             ],
             [
-              // Player list (md+ only)
               view_end_game_players(game, ""),
-              // Game log
-              game_log.view_game_log(game),
+              game_log.view_game_log_inline(game),
             ],
           ),
         ],
       ),
+      // Mobile game log (fixed at bottom via CSS, hidden on md+)
+      html.div([attribute.class("md:hidden")], [game_log.view_game_log(game)]),
     ],
   )
 }

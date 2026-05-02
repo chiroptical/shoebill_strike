@@ -43,6 +43,33 @@ pub fn view_game_log(game: protocol.Game) -> Element(Msg) {
   ])
 }
 
+/// View the game log inline (no fixed/absolute positioning)
+/// For use in flex columns where normal document flow is needed
+pub fn view_game_log_inline(game: protocol.Game) -> Element(Msg) {
+  let start_ms = helpers.timestamp_to_unix_ms(game.game_start_timestamp)
+  let events_oldest_first = list.reverse(game.game_log)
+  let consolidated = consolidate_mistake_discards(events_oldest_first)
+
+  html.div(
+    [
+      attribute.class(
+        "bg-gray-800 border border-gray-700 rounded-lg p-3 overflow-y-auto max-h-64",
+      ),
+    ],
+    [
+      html.h3([attribute.class("text-sm font-semibold text-gray-400 mb-2")], [
+        element.text("Game Log"),
+      ]),
+      html.ul(
+        [attribute.class("game-log-list")],
+        list.map(consolidated, fn(entry) {
+          view_consolidated_event(entry, start_ms)
+        }),
+      ),
+    ],
+  )
+}
+
 /// Consolidate consecutive MistakeDiscard events by the same player
 pub fn consolidate_mistake_discards(
   events: List(protocol.GameEvent),
